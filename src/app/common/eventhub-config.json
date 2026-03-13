@@ -1,0 +1,24 @@
+{
+  "UserConfig": {
+    "NamespaceConfig": [
+      {
+        "Type": "EventHub",
+        "Name": "emulatorns1",
+        "Entities": [
+          {
+            "Name": "news-processed",
+            "PartitionCount": "4",
+            "ConsumerGroups": [
+              {
+                "Name": "MAS"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "LoggingConfig": {
+      "Type": "File"
+    }
+  }
+}

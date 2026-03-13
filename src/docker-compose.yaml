@@ -1,0 +1,105 @@
+networks:
+  finance-net:
+    driver: bridge
+
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite
+    hostname: azurite
+    environment:
+      - AZURITE_DISABLE_TELEMETRY=true
+      - AZURITE_ACCOUNTS=devstoreaccount1:Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;mylocalaccount:bXlsb2NhbHNlY3JldGtleTEyMw==
+    ports:
+      - "10000:10000"   # Blob service
+      - "10001:10001"   # Queue service
+      - "10002:10002"   # Table service
+    volumes:
+      - azurite_data:/data
+    command: >
+      azurite
+      --blobHost 0.0.0.0
+      --queueHost 0.0.0.0
+      --tableHost 0.0.0.0
+      --location /data
+      --debug /data/azurite-debug.log
+      --skipApiVersionCheck
+    networks:
+      - finance-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('net').connect(10000,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Cosmos DB Emulator
+  cosmos:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: cosmos-emulator
+    hostname: cosmos-emulator
+    ports:
+      - "8081:8081"  
+      - "10251:10251"
+      - "10252:10252"
+      - "10253:10253"
+      - "10254:10254"
+    environment:
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
+      - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+    volumes:
+      - cosmos_data:/tmp/cosmos/appdata
+    networks:
+      - finance-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8081/_explorer/emulator.pem"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # EventHub Emulator
+  # Requires: infra/eventhub-config.json
+  eventhub:
+    image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
+    container_name: eventhub-emulator
+    hostname: eventhub-emulator
+    ports:
+      - "5672:5672"     # AMQP
+      - "9092:9092"     
+    volumes:
+      - ./app/common/eventhub-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json
+    environment:
+      - ACCEPT_EULA=Y
+      - BLOB_SERVER=azurite
+      - METADATA_SERVER=azurite
+    depends_on:
+      azurite:
+        condition: service_healthy
+    networks:
+      - finance-net
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node         
+      - xpack.security.enabled=false        
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g         
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+
+volumes:
+  azurite_data:
+  cosmos_data:
+  esdata:
