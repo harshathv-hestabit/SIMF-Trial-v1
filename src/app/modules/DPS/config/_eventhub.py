@@ -16,6 +16,9 @@ class EventProducer:
         )
 
     def publish(self, news_id: str):
+        '''
+        This Function is not being invoked in the change feed service currently
+        '''
         payload = json.dumps({
             "news_doc_id": news_id,
             "partition_key": news_id
