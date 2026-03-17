@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 COSMOSDB_CONFIG = {
-    "database_name": "SIMF",
+    "database_name": "SMIF",
     "containers": {
         "news": {
             "name": "news",

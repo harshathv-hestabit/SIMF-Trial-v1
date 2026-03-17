@@ -1,5 +1,5 @@
 COSMOSDB_CONFIG = {
-    "database_name": "SIMF",
+    "database_name": "SMIF",
     "containers": [
         {
             "name": "news",

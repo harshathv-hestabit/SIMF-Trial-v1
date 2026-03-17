@@ -1,61 +1,3 @@
-# import streamlit as st
-# import json
-# import asyncio
-# from pipeline import run_pipeline
-
-# st.set_page_config(
-#     page_title="SIMF Data Pipeline",
-#     layout="wide"
-# )
-
-# st.title("Smart Market Insight Feed")
-# st.subheader("News Data Ingestion")
-
-# st.markdown(
-# """
-# Upload one or more JSON files containing financial news documents.
-# The system will process the files and push them through the SIMF data pipeline.
-# """
-# )
-
-
-
-# uploaded_files = st.file_uploader(
-#     "Upload JSON Files",
-#     type=["json"],
-#     accept_multiple_files=True
-# )
-
-# def load_json_files(files):
-#     docs = []
-#     for f in files:
-#         data = json.load(f)
-#         if isinstance(data, list):
-#             docs.extend(data)
-#         else:
-#             docs.append(data)
-#     return docs
-
-# if uploaded_files:
-#     st.success(f"{len(uploaded_files)} files uploaded")
-#     if st.button("Start Data Pipeline"):
-
-#         with st.spinner("Processing files through pipeline..."):
-#             docs = load_json_files(uploaded_files)
-#             st.write(f"Total documents detected: {len(docs)}")
-
-#             try:
-#                 pipeline_result = asyncio.run(run_pipeline(docs))
-#                 st.success("Pipeline completed successfully")
-#                 st.json({
-#                     "documents_processed": len(docs),
-#                     "pipeline_status": pipeline_result
-#                 })
-
-#             except Exception as e:
-#                 st.error("Pipeline execution failed")
-#                 st.exception(e)
-
 import streamlit as st
 import json
 import asyncio
@@ -63,7 +5,7 @@ from pathlib import Path
 from pipeline import run_pipeline
 
 st.set_page_config(
-    page_title="SIMF Data Pipeline",
+    page_title="SMIF Data Pipeline",
     layout="wide"
 )
 

@@ -4,7 +4,7 @@ from azure.cosmos.aio import CosmosClient as AsyncCosmosClient
 from azure.cosmos import PartitionKey
 
 COSMOSDB_CONFIG = {
-    "database_name": "SIMF",
+    "database_name": "SMIF",
     "containers": {
         "news": {
             "name": "news",

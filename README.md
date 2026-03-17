@@ -1,5 +1,5 @@
-<!-- # SIMF-Trial-v1
-SIMF Trial Implementation V1: Event Driven System
+<!-- # SMIF-Trial-v1
+SMIF Trial Implementation V1: Event Driven System
 
 Current Progress:
 1. Data Pipeline System:
@@ -33,9 +33,9 @@ Current Progress:
     
      -->
 
-# SIMF-Trial-v1
+# SMIF-Trial-v1
 
-SIMF Trial Implementation V1: Event Driven System
+SMIF Trial Implementation V1: Event Driven System
 ---
 
 ## Overview
