@@ -1,4 +1,5 @@
 .env
+.env.docker
 demo
 __pycache__
 news_raw
@@ -8,4 +9,4 @@ isin_to_ticker.json
 sample_insert.py
 sample.py
 test.py
-.dockerfile
+.vscode

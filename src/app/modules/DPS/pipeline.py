@@ -1,8 +1,6 @@
-from ingestion import collect_documents
-from transformation import preprocess_news
-from config import CosmosAsyncClient
-from dotenv import load_dotenv
-load_dotenv()
+from app.modules.DPS.ingestion import collect_documents
+from app.modules.DPS.transformation import preprocess_news
+from app.modules.DPS.config.cosmosdb import CosmosAsyncClient
 
 import asyncio
 

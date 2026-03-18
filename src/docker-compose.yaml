@@ -45,7 +45,7 @@ services:
     container_name: cosmos-emulator
     hostname: cosmos-emulator
     ports:
-      - "8081:8081"  
+      - "8081:8081"
       - "10251:10251"
       - "10252:10252"
       - "10253:10253"
@@ -53,7 +53,7 @@ services:
     environment:
       - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
       - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
-      - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+      # - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
     volumes:
       - cosmos_data:/tmp/cosmos/appdata
     networks:
@@ -73,7 +73,7 @@ services:
     hostname: eventhub-emulator
     ports:
       - "5672:5672"     # AMQP
-      - "9092:9092"     
+      - "9092:9092"
     volumes:
       - ./app/common/eventhub-config.json:/Eventhubs_Emulator/ConfigFiles/Config.json
     environment:
@@ -90,14 +90,52 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.3.1
     container_name: elasticsearch
     environment:
-      - discovery.type=single-node         
-      - xpack.security.enabled=false        
+      - discovery.type=single-node
+      - xpack.security.enabled=false
       - xpack.security.http.ssl.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g         
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
     ports:
       - "9200:9200"
     volumes:
       - esdata:/usr/share/elasticsearch/data
+    networks:
+      - finance-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # # DPS Module — Python service + Streamlit UI
+  # dps:
+  #   build:
+  #     context: .
+  #     dockerfile: app/modules/DPS/.dockerfile
+  #   container_name: dps
+  #   hostname: dps
+  #   ports:
+  #     - "8501:8501"     # Streamlit UI
+  #   env_file:
+  #     - .env.docker
+  #   volumes:
+  #     - ./.env.docker:/app/.env:ro
+  #   depends_on:
+  #     azurite:
+  #       condition: service_healthy
+  #     cosmos:
+  #       condition: service_healthy
+  #     eventhub:
+  #       condition: service_started
+  #   networks:
+  #     - finance-net
+  #   restart: on-failure
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 20s
 
 volumes:
   azurite_data:

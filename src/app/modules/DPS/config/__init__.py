@@ -1,3 +1,3 @@
-from ._cosmosdb import CosmosSyncClient,CosmosAsyncClient
-from ._eventhub import EventProducer
-__all__ =("CosmosSyncClient","CosmosAsyncClient","EventProducer")
+from .cosmosdb import get_cosmos_async_client
+from .eventhub import EventProducer
+__all__ =("get_cosmos_async_client","EventProducer")

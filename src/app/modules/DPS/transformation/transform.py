@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime
 
-
 def preprocess_news(raw_doc: dict) -> dict:
     """
     Preprocess a raw EODHD news document into the internal news model schema.

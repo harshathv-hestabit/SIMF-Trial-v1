@@ -2,7 +2,16 @@ import streamlit as st
 import json
 import asyncio
 from pathlib import Path
-from pipeline import run_pipeline
+
+# Allow local `streamlit run src/app/modules/DPS/streamlit_app.py`
+# to resolve imports from the `src` package root without requiring PYTHONPATH.
+import sys
+
+SRC_ROOT = Path(__file__).resolve().parents[3]
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from app.modules.DPS.pipeline import run_pipeline
 
 st.set_page_config(
     page_title="SMIF Data Pipeline",
@@ -16,18 +25,10 @@ st.markdown("""
 Upload JSON files OR run the pipeline on sample JSON documents stored locally.
 """)
 
-# -------------------------
-# Input Mode Selection
-# -------------------------
-
 input_mode = st.radio(
     "Choose Input Source",
     ["Upload JSON Files", "Run Sample Files"]
 )
-
-# -------------------------
-# JSON Loaders
-# -------------------------
 
 def load_json_files(files):
     docs = []
@@ -56,11 +57,6 @@ def load_json_from_folder(folder_path):
                 docs.append(data)
 
     return docs
-
-
-# -------------------------
-# Mode 1 — Upload Files
-# -------------------------
 
 if input_mode == "Upload JSON Files":
 
@@ -94,11 +90,6 @@ if input_mode == "Upload JSON Files":
                 except Exception as e:
                     st.error("Pipeline execution failed")
                     st.exception(e)
-
-
-# -------------------------
-# Mode 2 — Sample Folder
-# -------------------------
 
 if input_mode == "Run Sample Files":
 
