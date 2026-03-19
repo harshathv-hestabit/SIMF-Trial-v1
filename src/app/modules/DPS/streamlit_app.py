@@ -93,7 +93,7 @@ if input_mode == "Upload JSON Files":
 
 if input_mode == "Run Sample Files":
 
-    SAMPLE_FOLDER = "src/app/modules/DPS/news_raw"
+    SAMPLE_FOLDER = Path(__file__).resolve().parent/"news_raw"
 
     if st.button("Run Sample Pipeline"):
 

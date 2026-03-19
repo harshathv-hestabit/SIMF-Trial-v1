@@ -41,6 +41,7 @@ class ClientProfile:
     asset_descriptions: list[str]
     classification_weights: dict[str, float]
     asset_type_weights: dict[str, float]
+    ticker_symbols: list[str] = field(default_factory=list)
     query: str = field(default="")
     tags_of_interest: list[str] = field(default_factory=list)
 

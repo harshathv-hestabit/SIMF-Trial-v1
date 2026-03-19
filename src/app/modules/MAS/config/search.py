@@ -1,24 +1,51 @@
-from elasticsearch import Elasticsearch
-from sentence_transformers import SentenceTransformer, LoggingHandler
-from sentence_transformers.util import disabled_tqdm
 from collections import defaultdict
+from elasticsearch import Elasticsearch
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import math
 import pandas as pd
 import requests
 import json
 import time
-import os
 from pathlib import Path
-from ._client import build_all_client_profiles, ClientProfile
+from .settings import settings
+from .client import build_all_client_profiles, ClientProfile
+from .client_portfolio_store import insert_clients_to_cosmos
 
-HF_TOKEN = os.getenv("HF_TOKEN")
-PORTFOLIO_PATH = "src/app/modules/MAS/config/portfolio.csv"
+PORTFOLIO_PATH = Path(__file__).resolve().parent / "portfolio.csv"
 
-es = Elasticsearch("http://localhost:9200", verify_certs=False)
-embedder = SentenceTransformer("all-MiniLM-L6-v2",token=HF_TOKEN)
-
+es = Elasticsearch(settings.ELASTICSEARCH_URL, verify_certs=False)
 INDEX = "clients"
 DIM = 384
-CACHE_FILE = Path("src/app/modules/MAS/config/isin_to_ticker.json")
+CACHE_FILE = Path(__file__).resolve().parent / "isin_to_ticker.json"
+EMBEDDING_MODEL = "models/gemini-embedding-001"
+
+document_embedder = GoogleGenerativeAIEmbeddings(
+    model=EMBEDDING_MODEL,
+    api_key=settings.GOOGLE_API_KEY,
+    task_type="RETRIEVAL_DOCUMENT",
+    output_dimensionality=DIM,
+)
+query_embedder = GoogleGenerativeAIEmbeddings(
+    model=EMBEDDING_MODEL,
+    api_key=settings.GOOGLE_API_KEY,
+    task_type="RETRIEVAL_QUERY",
+    output_dimensionality=DIM,
+)
+
+
+def _normalize_embedding(vector: list[float]) -> list[float]:
+    magnitude = math.sqrt(sum(value * value for value in vector))
+    if not magnitude:
+        return vector
+    return [value / magnitude for value in vector]
+
+
+def _embed_document(text: str) -> list[float]:
+    return _normalize_embedding(document_embedder.embed_documents([text])[0])
+
+
+def _embed_query(text: str) -> list[float]:
+    return _normalize_embedding(query_embedder.embed_query(text))
 
 def build_isin_ticker_map(isins: list[str]) -> dict[str, str]:
     if CACHE_FILE.exists():
@@ -115,12 +142,19 @@ def _profile_to_text(client: ClientProfile) -> str:
         client.client_type,
     ]))
 
+
+def attach_ticker_symbols(
+    profiles: dict[str, ClientProfile],
+    isin_ticker_map: dict[str, str],
+) -> None:
+    for profile in profiles.values():
+        profile.ticker_symbols = list(filter(None, [
+            isin_ticker_map.get(isin) for isin in profile.isins
+        ]))
+
 def index_client(client: ClientProfile, isin_ticker_map: dict[str, str]) -> None:
     text = _profile_to_text(client)
-    embedding = embedder.encode([text], normalize_embeddings=True)[0].tolist()
-    ticker_symbols = list(filter(None, [
-        isin_ticker_map.get(isin) for isin in client.isins
-    ]))
+    embedding = _embed_document(text)
 
     es.index(
         index=INDEX,
@@ -136,7 +170,7 @@ def index_client(client: ClientProfile, isin_ticker_map: dict[str, str]) -> None
             "asset_classifications":  client.asset_classifications,
             "currencies":             client.currencies,
             "isins":                  client.isins,
-            "ticker_symbols":         ticker_symbols,            
+            "ticker_symbols":         client.ticker_symbols,
             "asset_ids":              client.asset_ids,
             "asset_descriptions":     client.asset_descriptions,
             "classification_weights": client.classification_weights,
@@ -147,7 +181,7 @@ def index_client(client: ClientProfile, isin_ticker_map: dict[str, str]) -> None
         }
     )
     print(f"Client '{client.client_name}' (id={client.client_id}) "
-          f"indexed with {len(ticker_symbols)} tickers.")
+          f"indexed with {len(client.ticker_symbols)} tickers.")
 
 def _news_to_text(doc: dict) -> str:
     return " ".join(filter(None, [
@@ -163,7 +197,7 @@ def score_news_against_clients(
     min_score: float = 0.0,
 ) -> list[dict]:
     news_text    = _news_to_text(news_doc)
-    news_vec     = embedder.encode([news_text], normalize_embeddings=True)[0].tolist()
+    news_vec     = _embed_query(news_text)
     news_tags    = [t.upper() for t in news_doc.get("tags", [])]
     news_tickers = [s.split(".")[0].upper() for s in news_doc.get("symbols", [])]
     print(f"[DEBUG] news_tickers: {news_tickers}")
@@ -260,14 +294,19 @@ def process_news_stream(
                 )
     return results
 
-if __name__ == "__main__":
+import asyncio
+
+async def run_indexing():
     df = pd.read_csv(PORTFOLIO_PATH)
     profiles = build_all_client_profiles(df)
     all_isins = list({isin for p in profiles.values() for isin in p.isins})
     print(f"[Setup] {len(all_isins)} unique ISINs across {len(profiles)} clients")
 
     isin_ticker_map = build_isin_ticker_map(all_isins)
+    attach_ticker_symbols(profiles, isin_ticker_map)
     create_index()
 
     for profile in profiles.values():
         index_client(profile, isin_ticker_map)
+        
+    await insert_clients_to_cosmos(profiles)

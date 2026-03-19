@@ -10,14 +10,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/__init__.py ./app/__init__.py
 COPY app/modules/__init__.py ./app/modules/__init__.py
-COPY app/modules/DPS ./app/modules/DPS
+COPY app/modules/MAS ./app/modules/MAS
 
-EXPOSE 8501
+EXPOSE 8502
 
 CMD ["sh", "-c", "\
-    python -m app.modules.DPS & PY_PID=$! ; \
-    streamlit run app/modules/DPS/streamlit_app.py \
+    python -m app.modules.MAS & PY_PID=$! ; \
+    streamlit run app/modules/MAS/ui/main.py \
         --server.headless=true \
-        --server.port=8501 & ST_PID=$! ; \
+        --server.port=8502 & ST_PID=$! ; \
     wait $PY_PID ; EXIT=$? ; kill $ST_PID 2>/dev/null ; exit $EXIT \
 "]

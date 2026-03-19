@@ -1,43 +1,37 @@
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
 
+from ..agents.insight_generator import generate_insight_agent
+from ..agents.verifier import verify_insight_agent
+from ..util.update_db import update_db
+
 class InsightState(TypedDict):
     client_id: str
-    news_event: dict
-    client_portfolio: dict     # fetched from context
-    insight_draft: str         # current draft
-    verification_score: float  # 0–100
+    news_document: dict
+    client_portfolio_document: dict     
+    insight_draft: str         
+    verification_score: float  
     verification_feedback: str # feedback for next iteration
     iterations: int
     status: str                # "pending" | "verified" | "failed"
 
 SCORE_THRESHOLD = 75.0
-MAX_ITERATIONS = 3
+MAX_ITERATIONS = 4
 
-def generate_insight(state: InsightState) -> InsightState:
-    feedback_clause = (
-        f" Previous feedback: {state['verification_feedback']}"
-        if state["verification_feedback"] else ""
-    )
-    state["insight_draft"] = (
-        f"[Draft v{state['iterations'] + 1}] Based on '{state['news_event'].get('title')}', "
-        f"your portfolio may be impacted.{feedback_clause}"
-    )
+async def generate_insight(state):
+    insight = await generate_insight_agent(state)
+    state["insight_draft"] = insight
     state["iterations"] += 1
-    print(f"[Insight] Iteration {state['iterations']} — draft generated")
     return state
 
-def verify_insight(state: InsightState) -> InsightState:
-    state["verification_score"] = min(60.0 + state["iterations"] * 15, 100.0)
-    state["verification_feedback"] = (
-        "" if state["verification_score"] >= SCORE_THRESHOLD
-        else "Improve actionability and personalise holdings reference."
-    )
-    print(f"[Verifier] Score: {state['verification_score']} (threshold: {SCORE_THRESHOLD})")
+async def verify_insight(state):
+    result = await verify_insight_agent(state)
+    state["verification_score"] = result["score"]
+    state["verification_feedback"] = result["feedback"]
     return state
 
-def save_insight(state: InsightState) -> InsightState:
-    print(f"[DB] Insight saved for client {state['client_id']}: {state['insight_draft']}")
+async def save_insight(state):
+    await update_db(state)
     state["status"] = "verified"
     return state
 
@@ -74,19 +68,3 @@ def build_insight_graph() -> StateGraph:
     g.add_edge("save", END)
     g.add_edge("fail", END)
     return g.compile()
-
-if __name__ == "__main__":
-    graph = build_insight_graph()
-    result = graph.invoke({
-        "client_id": "hnw_001",
-        "news_event": {"title": "Apple earnings beat expectations", "tickers": ["AAPL"]},
-        "client_portfolio": {"holdings": ["AAPL", "MSFT"]},
-        "insight_draft": "",
-        "verification_score": 0.0,
-        "verification_feedback": "",
-        "iterations": 0,
-        "status": "pending",
-    })
-    print(f"\nFinal status : {result['status']}")
-    print(f"Final insight: {result['insight_draft']}")
-    print(f"Final score  : {result['verification_score']}")

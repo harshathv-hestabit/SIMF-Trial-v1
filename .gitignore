@@ -5,8 +5,4 @@ __pycache__
 news_raw
 index_dump.json
 portfolio.csv
-isin_to_ticker.json
-sample_insert.py
-sample.py
-test.py
 .vscode

@@ -1,5 +1,8 @@
+import asyncio
+
 from azure.cosmos import PartitionKey
 from azure.cosmos.aio import CosmosClient as AsyncCosmosClient
+from azure.core.exceptions import ServiceRequestError
 from .settings import settings
 
 _initialized = False
@@ -55,7 +58,7 @@ class CosmosAsyncClient:
 
     async def upsert_document(self, doc: dict):
         await self.container.upsert_item(doc)
-
+                
     async def read_document(self, doc_id, partition_key):
         return await self.container.read_item(doc_id, partition_key)
 
