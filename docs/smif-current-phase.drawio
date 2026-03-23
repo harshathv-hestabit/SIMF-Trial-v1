@@ -1,0 +1,182 @@
+<mxfile host="app.diagrams.net" modified="2026-03-23T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="smif-current-phase" name="SMIF Current Phase">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="platform" value="SMIF Current Phase (Hybrid Transport)" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#5B8DEF;fillColor=#EAF2FF;fontStyle=1;fontSize=18;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1660" height="860" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dpsGroup" value="DPS" style="swimlane;rounded=1;whiteSpace=wrap;html=1;horizontal=0;startSize=28;strokeColor=#4C956C;fillColor=#EAF7EE;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="90" width="340" height="410" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dpsUi" value="DPS Streamlit UI&#xa;app/modules/DPS/streamlit_app.py&#xa;Port 8501" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="dpsGroup">
+          <mxGeometry x="40" y="40" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dpsPipeline" value="DPS Pipeline&#xa;transform + ingest market news" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="dpsGroup">
+          <mxGeometry x="40" y="130" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dpsChangeFeed" value="DPS Change Feed Listener&#xa;python -m app.modules.DPS&#xa;realtime event producer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="dpsGroup">
+          <mxGeometry x="40" y="225" width="260" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dpsStandardDispatch" value="Standard Event Dispatcher&#xa;publishes standard_news&#xa;directly to Service Bus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;" vertex="1" parent="dpsGroup">
+          <mxGeometry x="40" y="325" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="storageGroup" value="Shared Data and Messaging" style="swimlane;rounded=1;whiteSpace=wrap;html=1;horizontal=0;startSize=28;strokeColor=#D79B00;fillColor=#FFF4CC;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="450" y="90" width="380" height="640" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cosmos" value="Cosmos DB Emulator&#xa;Containers:&#xa;- news&#xa;- client_portfolio&#xa;- insights" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#FFF2CC;strokeColor=#D6B656;" vertex="1" parent="storageGroup">
+          <mxGeometry x="60" y="40" width="260" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="eventhub" value="Event Hubs Emulator&#xa;Hub: news-processed&#xa;Realtime path only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;" vertex="1" parent="storageGroup">
+          <mxGeometry x="60" y="190" width="260" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="servicebus" value="Service Bus Emulator&#xa;Queues:&#xa;- realtime-news-events&#xa;- standard-news-events&#xa;- generate-insight-events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;" vertex="1" parent="storageGroup">
+          <mxGeometry x="60" y="330" width="260" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="azurite" value="Azurite&#xa;checkpoint / AzureWebJobsStorage" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#F8CECC;strokeColor=#B85450;" vertex="1" parent="storageGroup">
+          <mxGeometry x="60" y="500" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bridgeGroup" value="Azure Function Bridge" style="swimlane;rounded=1;whiteSpace=wrap;html=1;horizontal=0;startSize=28;strokeColor=#9673A6;fillColor=#F3E8FF;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="90" width="330" height="260" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="functionHost" value="Functions Host&#xa;host.json&#xa;local.settings.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;" vertex="1" parent="bridgeGroup">
+          <mxGeometry x="35" y="45" width="260" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bridgeFn" value="dispatch_realtime_eventhub_to_servicebus&#xa;eventHubTrigger&#xa;routes by event_type" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;" vertex="1" parent="bridgeGroup">
+          <mxGeometry x="35" y="140" width="260" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="masGroup" value="MAS" style="swimlane;rounded=1;whiteSpace=wrap;html=1;horizontal=0;startSize=28;strokeColor=#6C8EBF;fillColor=#EAF2F8;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="90" width="380" height="520" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="masWorkers" value="MAS Workers&#xa;python -m app.modules.MAS&#xa;consumes Service Bus queues" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="masGroup">
+          <mxGeometry x="40" y="40" width="300" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="hnwWorkflow" value="HNW Workflow&#xa;handles realtime_news" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="masGroup">
+          <mxGeometry x="40" y="145" width="300" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="standardWorkflow" value="Standard Workflow&#xa;handles standard_news" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="masGroup">
+          <mxGeometry x="40" y="225" width="300" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="insightWorkflow" value="Generate Insight Workflow&#xa;handles generate_insight" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="masGroup">
+          <mxGeometry x="40" y="305" width="300" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="elastic" value="Elasticsearch&#xa;portfolio indexing and retrieval" style="shape=cylinder;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="masGroup">
+          <mxGeometry x="40" y="390" width="300" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="masUi" value="MAS Streamlit UI&#xa;app/modules/MAS/ui/main.py&#xa;Port 8502" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="masGroup">
+          <mxGeometry x="40" y="465" width="300" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge1" value="upload / ingest" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#4C956C;" edge="1" parent="1" source="dpsUi" target="dpsPipeline">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge2" value="store news documents" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#4C956C;" edge="1" parent="1" source="dpsPipeline" target="cosmos">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge3" value="change feed" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#4C956C;" edge="1" parent="1" source="cosmos" target="dpsChangeFeed">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge4" value="publish realtime_news" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#4C956C;" edge="1" parent="1" source="dpsChangeFeed" target="eventhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge5" value="publish standard_news" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#4C956C;" edge="1" parent="1" source="dpsStandardDispatch" target="servicebus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge6" value="trigger batch" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#9673A6;" edge="1" parent="1" source="eventhub" target="bridgeFn">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge7" value="runtime config" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#9673A6;" edge="1" parent="1" source="functionHost" target="bridgeFn">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge8" value="enqueue realtime-news-events" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#9673A6;" edge="1" parent="1" source="bridgeFn" target="servicebus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge9" value="consume queues" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="servicebus" target="masWorkers">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge10" value="realtime_news" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="masWorkers" target="hnwWorkflow">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge11" value="standard_news" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="masWorkers" target="standardWorkflow">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge12" value="generate_insight" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="masWorkers" target="insightWorkflow">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge13" value="match clients" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="hnwWorkflow" target="elastic">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge14" value="match portfolios" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="standardWorkflow" target="elastic">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge15" value="read/write documents" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="hnwWorkflow" target="cosmos">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge16" value="read/write documents" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="standardWorkflow" target="cosmos">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge17" value="store insights" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="insightWorkflow" target="cosmos">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge18" value="publish generate_insight" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="hnwWorkflow" target="servicebus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge19" value="publish generate_insight" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="standardWorkflow" target="servicebus">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge20" value="display stored insights" style="endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#6C8EBF;" edge="1" parent="1" source="cosmos" target="masUi">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge21" value="checkpoint / metadata" style="dashed=1;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#B85450;" edge="1" parent="1" source="azurite" target="eventhub">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="edge22" value="AzureWebJobsStorage" style="dashed=1;endArrow=block;html=1;rounded=0;strokeWidth=2;strokeColor=#B85450;" edge="1" parent="1" source="azurite" target="functionHost">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
