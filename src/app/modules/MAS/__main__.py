@@ -12,6 +12,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
 )
 logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

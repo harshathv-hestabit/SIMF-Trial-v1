@@ -14,6 +14,12 @@ if not _ENV_PATH.exists():
 class Settings(BaseSettings):
     GROQ_BASE_URL: str = Field(..., description="Groq API base URL")
     GROQ_API_KEY: str = Field(..., description="Groq API key")
+    LLM_POOL_CONFIG: str = Field(
+        default="",
+        description="JSON array describing the LLM backend pool",
+    )
+    LLM_MAX_RETRIES: int = Field(3, description="Retries after pool exhaustion")
+    LLM_TEMPERATURE: float = Field(0.3, description="Default LLM temperature")
 
     COSMOS_URL: str = Field(..., description="Cosmos DB endpoint")
     COSMOS_KEY: str = Field(..., description="Cosmos DB key")
