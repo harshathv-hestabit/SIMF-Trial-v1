@@ -1,5 +1,52 @@
 # SMIF
 
+## v1.1 Checklist
+- move modules' config to app/common and refactor docker services to use this path in bind mount []
+- move `Client` indexing and upsert from MAS module to DPS module []
+- Create proper model schemas for `Client` and `News` in DPS []
+- Revise search.py in MAS module []
+- Revise news_poller.py to use Benzinga realtime news wss api to poll news stream []
+
+v1.1 planned flow for DPS module:
+
+flowchart LR
+    subgraph Source Layer
+        NP[News Poller.py\nBronze News Input]
+        PF[Portfolio.csv\nClient Portfolio Input]
+    end
+
+    subgraph DPS Processing Layer
+        DPS[DPS Module v1.1\nProcess / Transform / Route]
+    end
+
+    subgraph Storage and Change Processing
+        CDB[(Cosmos DB)]
+        CFS[Change Feed Service]
+    end
+
+    subgraph Observability
+        OBS[Streamlit Dashboard]
+    end
+
+    subgraph MAS Dispatch Layer
+        EMD[Event Hub Dispatcher]
+        SB[Service Bus]
+        MAS[MAS]
+    end
+
+    NP -->|news input| DPS
+    PF -->|client input| DPS
+
+    DPS -->|upsert processed data| CDB
+    CDB -->|change feed| CFS
+
+    CFS -->|metrics / status| OBS
+    CFS -->|processed event| EMD
+    EMD --> SB
+    SB --> MAS
+
+## Description
+
 Event-driven market insight system for ingesting market news, routing workflow events, matching news against client portfolios, and generating client-facing insights.
 
 The project currently has three application modules:
