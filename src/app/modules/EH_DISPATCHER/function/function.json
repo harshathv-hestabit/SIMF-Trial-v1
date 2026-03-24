@@ -1,0 +1,14 @@
+{
+  "scriptFile": "__init__.py",
+  "bindings": [
+    {
+      "name": "events",
+      "type": "eventHubTrigger",
+      "direction": "in",
+      "eventHubName": "%EVENTHUB_NAME%",
+      "connection": "EVENTHUB_CONNECTION_STRING",
+      "consumerGroup": "%EVENTHUB_CONSUMER_GROUP%",
+      "cardinality": "many"
+    }
+  ]
+}
