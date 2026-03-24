@@ -1,12 +1,8 @@
 import json
-import os
 import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
-
 import requests
 
 logging.basicConfig(
@@ -30,14 +26,6 @@ def fetch_news(
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> list[dict]:
-    """
-    Fetch news articles from the EODHD /api/news endpoint.
-
-    Either `symbol` (e.g. "AAPL.US") or `tag` (e.g. "earnings report") is required.
-    Symbols must include the exchange suffix: AAPL.US, BTC-USD.CC, EURUSD.FOREX, etc.
-
-    Returns a list of article dicts on success, raises on HTTP / API errors.
-    """
     if not symbol and not tag:
         raise ValueError("At least one of `symbol` (s) or `tag` (t) must be provided.")
 
@@ -77,19 +65,12 @@ def fetch_news(
 
     return data
 
-
 def fetch_sentiment(
     api_key: str,
     symbols: list[str],
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> dict:
-    """
-    Fetch daily sentiment scores for one or more tickers.
-
-    `symbols` — list of tickers with exchange suffix, e.g. ["AAPL.US", "BTC-USD.CC"]
-    Returns a dict keyed by ticker symbol.
-    """
     if not symbols:
         raise ValueError("`symbols` must not be empty.")
 
@@ -110,13 +91,11 @@ def fetch_sentiment(
     )
 
     response = requests.get(SENTIMENT_URL, params=params, timeout=30)
-
     if response.status_code == 401:
         raise ValueError("Invalid API key — check your EODHD_API_KEY.")
     response.raise_for_status()
 
     return response.json()
-
 
 def fetch_word_weights(
     api_key: str,
@@ -125,12 +104,6 @@ def fetch_word_weights(
     to_date: str | None = None,
     page_limit: int = 20,
 ) -> dict:
-    """
-    Fetch weighted keywords from news articles for a given ticker.
-
-    `symbol` — ticker with exchange suffix, e.g. "AAPL.US"
-    Returns a dict with 'data' (word weights), 'meta', and 'links'.
-    """
     params: dict = {
         "api_token": api_key,
         "fmt": "json",
@@ -156,19 +129,11 @@ def fetch_word_weights(
 
     return response.json()
 
-
 def sanitize_filename(text: str, max_len: int = 80) -> str:
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in text)
     return safe[:max_len].strip("_")
 
-
 def save_article(article: dict, output_dir: Path, index: int) -> Path:
-    """
-    Save a single news article dict as a pretty-printed JSON file.
-
-    Naming: {index:04d}_{date}_{sanitized_title}.json
-    Each article contains: date, title, content, link, symbols, tags, sentiment
-    """
     date_str = ""
     if raw_date := article.get("date", ""):
         try:
@@ -187,12 +152,11 @@ def save_article(article: dict, output_dir: Path, index: int) -> Path:
     return filepath
 
 def run() -> None:
-    api_key = os.environ.get("EODHD_API_KEY", "demo")
+    # api_key = os.environ.get("EODHD_API_KEY", "demo")
+    api_key = ""
     output_dir = Path(SAVE_PATH)
     output_dir.mkdir(parents=True, exist_ok=True)
     log.info("Output directory: %s", output_dir.resolve())
-
-    # --- Configuration ---
     tags = [
         "finance",
         "banking",
@@ -210,8 +174,6 @@ def run() -> None:
 
     total_saved = 0
     global_index = 1
-
-    # ── Fetch news by tag ─────────────────────────────────────────────────────
     for tag in tags:
         log.info("─── Fetching news for tag: %s ───", tag)
 
@@ -245,82 +207,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-
-
-# from elasticsearch import Elasticsearch
-# import json
-
-# es = Elasticsearch("http://localhost:9200")
-# index_name = "clients"
-
-# # Fetch all documents using scroll
-# result = es.search(
-#     index=index_name,
-#     body={"query": {"match_all": {}}},
-#     scroll="2m",
-#     size=1000
-# )
-
-# scroll_id = result["_scroll_id"]
-# documents = [hit["_source"] for hit in result["hits"]["hits"]]
-
-# # Keep scrolling until all docs are fetched
-# while True:
-#     result = es.scroll(scroll_id=scroll_id, scroll="2m")
-#     hits = result["hits"]["hits"]
-#     if not hits:
-#         break
-#     documents.extend(hit["_source"] for hit in hits)
-
-# es.clear_scroll(scroll_id=scroll_id)
-
-# # Write to JSON file
-# output_path = "index_dump.json"
-# with open(output_path, "w", encoding="utf-8") as f:
-#     json.dump(documents, f, indent=2)
-
-# print(f"Exported {len(documents)} documents → {output_path}")
-
-
-# save as src/app/inspect_index.py and run with python3 -m src.app.inspect_index
-
-# from elasticsearch import Elasticsearch
-# es = Elasticsearch("http://localhost:9200", verify_certs=False)
-
-# # 1. Check clients 24 and 26 — they scored 1.0 on BYD/Tesla news
-# for client_id in ["8255", "8917"]:
-#     doc = es.get(index="clients", id=client_id)["_source"]
-#     print(f"\n{'='*60}")
-#     print(f"Client: {doc['client_name']} (id={doc['client_id']})")
-#     print(f"Type:         {doc['client_type']}")
-#     print(f"Mandate:      {doc['mandate']}")
-#     print(f"Classifications: {doc['asset_classifications']}")
-#     print(f"Tickers:      {doc['ticker_symbols']}")
-#     print(f"Tags:         {doc['tags_of_interest']}")
-#     print(f"Query:        {doc['query']}")
-#     print(f"Asset descriptions (first 5): {doc['asset_descriptions'][:5]}")
-
-# # 2. Overall index stats
-# stats = es.count(index="clients")
-# print(f"\n{'='*60}")
-# print(f"Total docs in index: {stats['count']}")
-
-# # 3. Check how many clients have tickers vs none
-# result = es.search(
-#     index="clients",
-#     size=0,
-#     aggs={
-#         "has_tickers": {
-#             "filter": {"exists": {"field": "ticker_symbols"}},
-#         }
-#     }
-# )
-# print(f"Clients with ticker_symbols field: {result['aggregations']['has_tickers']['doc_count']}")
-
-# # 4. Sample the query field across all clients — this drives semantic matching
-# all_clients = es.search(index="clients", size=35, source=["client_id", "client_name", "query", "ticker_symbols", "asset_classifications"])
-# print(f"\n{'='*60}")
-# print("Query strings per client (drives semantic scoring):")
-# for hit in all_clients["hits"]["hits"]:
-#     s = hit["_source"]
-#     print(f"  [{s['client_id']}] {s['client_name']}: tickers={len(s.get('ticker_symbols', []))} | query='{s.get('query', '')[:80]}'")
