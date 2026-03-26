@@ -1,92 +1,122 @@
 # SMIF
 
 ## v1.1 Checklist
-- move modules' config to app/common and refactor docker services to use this path in bind mount []
-- move `Client` indexing and upsert from MAS module to DPS module []
-- Create proper model schemas for `Client` and `News` in DPS []
-- Revise search.py in MAS module []
-- Revise news_poller.py to use Benzinga realtime news wss api to poll news stream []
+- move modules' config to app/common and refactor docker services to use this path in bind mount [x]
+- move `Client` indexing and upsert from MAS module to DPS module [x]
+- Create proper model schemas for `Client` and `News` in DPS [x]
+- Revise search.py in MAS module [x]
+- Revise news_poller.py to use Benzinga realtime news wss api to poll news stream [x]
 
-v1.1 planned flow for DPS module:
+## Changes Since `origin/v1.1`
 
-``` mermaid
+Remote branch tip: `f1ef0b2` on `origin/v1.1`  
+Local branch tip: `83e1e76` on `v1.1`
+
+Commits included in this local delta:
+
+- `f669084` `feat(v1.1): add DPS news lifecycle dashboard and MAS portfolio view`
+- `dd90cbe` `feat(v1.1): add functions app and split DPS processing services`
+- `83e1e76` `refactor(v1.1): remove MAS portfolio bootstrap and simplify client matching`
+
+Net result of those commits:
+
+- DPS is split into dedicated responsibilities for UI, realtime news processing, and client portfolio processing.
+- Realtime ingestion now starts from the Benzinga websocket-backed `NEWS_PROVIDER` service instead of the old `news_poller.py` script.
+- Azure Functions responsibilities now live under `src/app/functions` and cover both change-feed dispatch and delayed standard job scheduling.
+- Standard workflow dispatch now targets `delayed-news-events`.
+- MAS no longer builds or indexes portfolio data at startup; it consumes portfolio documents already produced by DPS.
+
+v1.1 flow after the local commits:
+
+```mermaid
 flowchart LR
     subgraph Source Layer
-        NP[News Poller.py\nBronze News Input]
+        NP[NEWS_PROVIDER\nBenzinga Realtime Stream]
         PF[Portfolio.csv\nClient Portfolio Input]
     end
 
     subgraph DPS Processing Layer
-        DPS[DPS Module v1.1\nProcess / Transform / Route]
+        UI[DPS Streamlit UI]
+        NPROC[news_processor]
+        CPROC[client_processor]
     end
 
-    subgraph Storage and Change Processing
+    subgraph Storage and Routing
+        EH[(Event Hub)]
         CDB[(Cosmos DB)]
-        CFS[Change Feed Service]
+        ES[(Elasticsearch)]
+        FUNC[Azure Functions]
+        SB[(Service Bus)]
     end
 
-    subgraph Observability
-        OBS[Streamlit Dashboard]
+    subgraph MAS Layer
+        MAS[MAS Workers + UI]
     end
 
-    subgraph MAS Dispatch Layer
-        EMD[Event Hub Dispatcher]
-        SB[Service Bus]
-        MAS[MAS]
-    end
-
-    NP -->|news input| DPS
-    PF -->|client input| DPS
-
-    DPS -->|upsert processed data| CDB
-    CDB -->|change feed| CFS
-
-    CFS -->|metrics / status| OBS
-    CFS -->|processed event| EMD
-    EMD --> SB
+    NP --> EH
+    EH --> NPROC
+    NPROC --> CDB
+    CDB --> FUNC
+    FUNC --> SB
+    PF --> CPROC
+    CPROC --> CDB
+    CPROC --> ES
+    UI --> CDB
     SB --> MAS
-  ```
+    ES --> MAS
+```
 
 ## Description
 
-Event-driven market insight system for ingesting market news, routing workflow events, matching news against client portfolios, and generating client-facing insights.
+SMIF is an event-driven market insight system for ingesting news, storing normalized market data, matching relevant news against client portfolios, and generating client-facing insights.
 
-The project currently has three application modules:
+The current local stack is organized around four runtime areas:
 
-- `DPS` ingests and transforms news, stores it in Cosmos DB, emits realtime events through Event Hub, and can publish standard workflow jobs to Service Bus.
-- `EH_DISPATCHER` is an Azure Functions-based bridge that consumes Event Hub batches and republishes them to Service Bus queues.
-- `MAS` consumes Service Bus queues, runs the portfolio matching and insight workflows, and stores generated insights.
-
-The local stack is designed around Azure emulators, Elasticsearch, and Docker Compose.
+- `DPS` owns client portfolio processing, news normalization, and the Streamlit operator UI.
+- `functions` hosts the Azure Functions app used for Cosmos change-feed dispatch and delayed standard workflow scheduling.
+- `NEWS_PROVIDER` maintains the realtime Benzinga websocket listener and publishes raw events into Event Hub.
+- `MAS` consumes workflow queues, matches news against indexed client portfolios, and stores generated insights.
 
 ## Current Architecture
 
 ```text
-DPS Streamlit UI
-  -> DPS pipeline
+NEWS_PROVIDER
+  -> Benzinga websocket stream
+  -> Event Hub: news-stream
+
+DPS news_processor
+  -> consume Event Hub: news-stream
+  -> normalize raw news
   -> Cosmos DB news container
-  -> DPS change feed listener
-  -> Event Hub: news-processed
-  -> EH_DISPATCHER Azure Function
+
+Azure Functions change_feed_service
+  -> consume Cosmos DB change feed
   -> Service Bus queue: realtime-news-events
 
-DPS standard event publisher
-  -> Service Bus queue: delayed-news-events
+Azure Functions standard_trigger
+  -> schedule Service Bus queue: delayed-news-events
+
+DPS client_processor
+  -> load portfolio source
+  -> build client portfolio documents
+  -> Cosmos DB client portfolio container
+  -> Elasticsearch client index
 
 MAS queue consumers
   -> HNW workflow for realtime_news
   -> Standard workflow for standard_news
   -> generate_insight events
-  -> Insight workflow
   -> Cosmos DB insights container
   -> MAS Streamlit UI
 ```
 
 Current routing behavior:
 
-- `realtime_news` travels through Event Hub and is bridged into `realtime-news-events` queue.
-- `standard_news` is published directly to `delayed-news-events` queue.
-- `generate_insight` is published directly to `generate-insight-events` queue.
+- raw realtime news enters through `NEWS_PROVIDER` and is published into Event Hub `news-stream`
+- DPS `news_processor` consumes `news-stream`, normalizes documents, and writes them into Cosmos DB
+- Azure Functions `change_feed_service` publishes `realtime_news` messages to `realtime-news-events`
+- Azure Functions `standard_trigger` schedules `standard_news` messages onto `delayed-news-events`
+- MAS consumes `realtime-news-events`, `delayed-news-events`, and `generate-insight-events`
 
 Shared queue definitions live in [src/app/common/servicebus-config.json](/home/harshathvenkastesh/Desktop/SMIF/src/app/common/servicebus-config.json).
 
@@ -104,10 +134,16 @@ src/
       eventhub-config.json
       servicebus-config.json
       service_bus.py
+      settings.py
+    functions/
+      change_feed_service/
+      standard_trigger/
+      host.json
+      local.settings.json.example
     modules/
       DPS/
-      EH_DISPATCHER/
       MAS/
+      NEWS_PROVIDER/
 README.md
 ```
 
@@ -118,40 +154,49 @@ README.md
 Relevant files:
 
 - [src/app/modules/DPS/streamlit_app.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/streamlit_app.py)
-- [src/app/modules/DPS/pipeline.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/pipeline.py)
-- [src/app/modules/DPS/__main__.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/__main__.py)
-- [src/app/modules/DPS/services/change_feed_service.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/services/change_feed_service.py)
-- [src/app/modules/DPS/services/standard_event_service.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/services/standard_event_service.py)
+- [src/app/modules/DPS/services/news_processor/service.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/services/news_processor/service.py)
+- [src/app/modules/DPS/services/client_processor/service.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/services/client_processor/service.py)
+- [src/app/modules/DPS/services/client_processor/search_index.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/services/client_processor/search_index.py)
+- [src/app/modules/DPS/services/client_processor/store.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/services/client_processor/store.py)
 - [src/app/modules/DPS/.dockerfile](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/.dockerfile)
 
 Current role:
 
-- Accepts raw market news through the Streamlit UI.
-- Transforms source documents into the internal news schema.
-- Writes news documents into Cosmos DB.
-- Runs a Cosmos change-feed listener that emits realtime events into Event Hub.
-- Publishes standard workflow jobs directly to Service Bus.
-- In Docker, starts both the change-feed listener and the Streamlit UI in one container.
+- `news_processor` consumes realtime news from Event Hub and upserts normalized news documents into Cosmos DB.
+- `client_processor` builds client portfolio documents, upserts them into Cosmos DB, and indexes them into Elasticsearch.
+- DPS Streamlit remains the operator-facing UI for the DPS side of the system.
 
-### EH_DISPATCHER
+### Functions
 
 Relevant files:
 
-- [src/app/modules/EH_DISPATCHER/__init__.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER/__init__.py)
-- [src/app/modules/EH_DISPATCHER/function.json](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER/function.json)
-- [src/app/modules/EH_DISPATCHER/host.json](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER/host.json)
-- [src/app/modules/EH_DISPATCHER/local.settings.json.example](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER/local.settings.json.example)
-- [src/app/modules/EH_DISPATCHER/.dockerfile](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER/.dockerfile)
-- [src/app/common/service_bus.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/common/service_bus.py)
+- [src/app/functions/change_feed_service/__init__.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/change_feed_service/__init__.py)
+- [src/app/functions/change_feed_service/function.json](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/change_feed_service/function.json)
+- [src/app/functions/standard_trigger/__init__.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/standard_trigger/__init__.py)
+- [src/app/functions/standard_trigger/function.json](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/standard_trigger/function.json)
+- [src/app/functions/host.json](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/host.json)
+- [src/app/functions/.dockerfile](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/.dockerfile)
 
 Current role:
 
-- Runs as a Python Azure Function with an `eventHubTrigger`.
-- Reads batched events from `%EVENTHUB_NAME%`.
-- Maps supported `event_type` values to Service Bus queue names from the environment.
-- Rebuilds payloads with shared transport metadata via `build_event_payload`.
-- Publishes to Service Bus with retry logic.
-- Is containerized as `eh_dispatcher` in Docker Compose.
+- `change_feed_service` reacts to Cosmos DB news inserts and publishes `realtime_news` messages into Service Bus.
+- `standard_trigger` schedules delayed `standard_news` jobs using Service Bus scheduled enqueue time.
+- The Functions app now owns the Azure Functions host config that used to live under `EH_DISPATCHER`.
+
+### NEWS_PROVIDER
+
+Relevant files:
+
+- [src/app/modules/NEWS_PROVIDER/main.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/NEWS_PROVIDER/main.py)
+- [src/app/modules/NEWS_PROVIDER/listener.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/NEWS_PROVIDER/listener.py)
+- [src/app/modules/NEWS_PROVIDER/publisher.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/NEWS_PROVIDER/publisher.py)
+- [src/app/modules/NEWS_PROVIDER/.dockerfile](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/NEWS_PROVIDER/.dockerfile)
+
+Current role:
+
+- Connects to the realtime Benzinga websocket feed.
+- Publishes raw incoming news events into Event Hub.
+- Exposes health, readiness, and stats endpoints for runtime monitoring.
 
 ### MAS
 
@@ -161,18 +206,16 @@ Relevant files:
 - [src/app/modules/MAS/workflow/hnw.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/workflow/hnw.py)
 - [src/app/modules/MAS/workflow/standard.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/workflow/standard.py)
 - [src/app/modules/MAS/workflow/generate_insight.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/workflow/generate_insight.py)
+- [src/app/modules/MAS/agents/verifier.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/agents/verifier.py)
+- [src/app/modules/MAS/config/search.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/config/search.py)
 - [src/app/modules/MAS/ui/main.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/ui/main.py)
-- [src/app/modules/MAS/.dockerfile](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/.dockerfile)
 
 Current role:
 
-- Builds and indexes client portfolio data at startup.
 - Consumes `realtime-news-events`, `delayed-news-events`, and `generate-insight-events`.
-- Runs the HNW workflow for `realtime_news`.
-- Runs the standard workflow for `standard_news`.
-- Runs the insight generation and verification workflow for `generate_insight`.
+- Runs the HNW, standard, and generate-insight workflows.
+- Reads prebuilt client portfolio documents produced by DPS instead of building and indexing portfolios locally.
 - Stores insights in Cosmos DB and serves them through the Streamlit UI.
-- In Docker, starts both the MAS worker and the UI in one container.
 
 ## Local Infrastructure
 
@@ -183,14 +226,19 @@ Current role:
 - `eventhub` for the Event Hubs emulator
 - `servicebus-emulator` plus `mssql` for Service Bus queue emulation
 - `elasticsearch` for client indexing and retrieval
-- `dps` for the DPS listener and UI
+- `dps` for the DPS Streamlit UI
 - `mas` for the MAS workers and UI
-- `eh_dispatcher` for the Event Hub -> Service Bus bridge
+- `functions` for the Azure Functions host
+- `news_provider` for realtime news ingress
+- `dps_news_processor` for Event Hub -> Cosmos news processing
+- `dps_client_processor` for portfolio upsert and Elasticsearch indexing
 
 Default exposed ports:
 
 - DPS UI: `http://localhost:8501`
 - MAS UI: `http://localhost:8502`
+- Azure Functions host: `http://localhost:7071`
+- NEWS_PROVIDER API: `http://localhost:8080`
 - Elasticsearch: `http://localhost:9200`
 - Cosmos emulator: `https://localhost:8081`
 - Azurite Blob: `http://127.0.0.1:10000`
@@ -209,7 +257,7 @@ Run from [src](/home/harshathvenkastesh/Desktop/SMIF/src):
 docker compose up --build
 ```
 
-This starts DPS, MAS, and EH_DISPATCHER alongside all required local infrastructure.
+This starts DPS, MAS, the Azure Functions app, `NEWS_PROVIDER`, and the dedicated DPS processors alongside all required local infrastructure.
 
 To stop and remove persisted emulator data:
 
@@ -247,32 +295,37 @@ Use [src/.env.example](/home/harshathvenkastesh/Desktop/SMIF/src/.env.example) a
 - queue names and workflow concurrency settings
 - Elasticsearch settings
 - LLM and data-provider credentials
+- Azure Functions timer and change-feed settings
 
-The dispatcher function also provides a function-style settings example at [src/app/modules/EH_DISPATCHER/local.settings.json.example](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER/local.settings.json.example).
+The Functions app provides a function-style settings example at [src/app/functions/local.settings.json.example](/home/harshathvenkastesh/Desktop/SMIF/src/app/functions/local.settings.json.example).
 
-### 3. Start DPS
-
-Run the DPS UI:
+### 3. Start DPS UI
 
 ```bash
 streamlit run app/modules/DPS/streamlit_app.py
 ```
 
-Run the DPS change-feed listener:
+### 4. Start Azure Functions
 
 ```bash
-python -m app.modules.DPS
-```
-
-### 4. Start EH_DISPATCHER
-
-If you want to run the function locally instead of through Docker Compose, start it from [src/app/modules/EH_DISPATCHER](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/EH_DISPATCHER):
-
-```bash
+cd app/functions
 func start
 ```
 
-### 5. Start MAS
+### 5. Start NEWS_PROVIDER
+
+```bash
+uvicorn app.modules.NEWS_PROVIDER.main:app --host 0.0.0.0 --port 8080
+```
+
+### 6. Start DPS processors
+
+```bash
+python -m app.modules.DPS.services.news_processor
+python -m app.modules.DPS.services.client_processor
+```
+
+### 7. Start MAS
 
 Run MAS workers:
 
@@ -301,6 +354,7 @@ Shared emulator topology files live in:
 
 Application settings are defined in:
 
+- [src/app/common/settings.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/common/settings.py)
 - [src/app/modules/DPS/config/settings.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/DPS/config/settings.py)
 - [src/app/modules/MAS/config/settings.py](/home/harshathvenkastesh/Desktop/SMIF/src/app/modules/MAS/config/settings.py)
 
@@ -310,15 +364,17 @@ Notable settings include:
 - Event Hub connection settings
 - Service Bus connection and queue names
 - Azure Storage credentials
+- `STANDARD_TRIGGER_SCHEDULE` and `STANDARD_TRIGGER_DELAY_MINUTES`
+- `CHANGE_FEED_LEASE_CONTAINER`
 - workflow concurrency limits
 - `SERVICEBUS_MAX_DELIVERY_ATTEMPTS`
 - `ELASTICSEARCH_URL`
-- `GOOGLE_API_KEY`, `GROQ_API_KEY`, `EODHD_API_KEY`, and `HF_TOKEN`
+- `GOOGLE_API_KEY`, `GROQ_API_KEY`, and Benzinga credentials
 
 ## Project Notes
 
 - `src/.env` is required by the DPS and MAS settings loaders.
 - `src/.env.docker` is used by the Docker Compose app containers.
-- `EH_DISPATCHER` can run either in Docker Compose or under the local Azure Functions host.
-- The current project phase is still hybrid: realtime workflow entry is Event Hub based, while standard and generate-insight paths are already Service Bus native.
+- `src/app/functions` can run either in Docker Compose or under the local Azure Functions host.
+- The current project phase remains hybrid: realtime ingestion enters through Event Hub and Cosmos change feed, while standard and generate-insight paths are Service Bus native.
 - The current architecture diagram source is [docs/smif-current-phase.drawio](/home/harshathvenkastesh/Desktop/SMIF/docs/smif-current-phase.drawio).
