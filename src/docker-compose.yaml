@@ -41,8 +41,7 @@ services:
       retries: 10
       start_period: 5s
 
-  # Cosmos DB Emulator
-  cosmos:
+  cosmos-emulator:
     image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
     container_name: cosmos-emulator
     hostname: cosmos-emulator
@@ -56,14 +55,15 @@ services:
       - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=3
       - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
       - PROTOCOL=https
-      - EXPLORER_PROTOCOL=https
+      - EXPLORER_PROTOCOL=https-insecure
       - GATEWAY_PUBLIC_ENDPOINT=cosmos-emulator
-      # - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+      # # - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
     volumes:
-      - cosmos_data:/tmp/cosmos/appdata
+      - cosmos:/tmp/cosmos/appdata
     networks:
       finance-net:
         aliases:
+          - cosmos
           - cosmos-emulator.DOMAIN
     healthcheck:
       test: ["CMD", "curl", "-f", "-k", "https://localhost:8081/_explorer/index.html"]
@@ -72,8 +72,6 @@ services:
       retries: 2
       start_period: 10s
 
-  # EventHub Emulator
-  # Requires: app/common/azure_services/eventhub-config.json
   eventhub:
     image: mcr.microsoft.com/azure-messaging/eventhubs-emulator:latest
     container_name: eventhub-emulator
@@ -147,7 +145,6 @@ services:
       retries: 10
       start_period: 30s
 
-  # DPS Streamlit UI
   dps:
     build:
       context: .
@@ -170,7 +167,7 @@ services:
     depends_on:
       azurite:
         condition: service_healthy
-      cosmos:
+      cosmos-emulator:
         condition: service_healthy
     networks:
       - finance-net
@@ -196,7 +193,7 @@ services:
     depends_on:
       azurite:
         condition: service_healthy
-      cosmos:
+      cosmos-emulator:
         condition: service_healthy
       servicebus-emulator:
         condition: service_started
@@ -218,7 +215,7 @@ services:
       - ./.env.docker:/app/.env:ro
       - ./requirements.txt:/app/requirements.txt:ro
     depends_on:
-      cosmos:
+      cosmos-emulator:
         condition: service_healthy
     networks:
       - finance-net
@@ -229,6 +226,41 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  ui-api:
+    build:
+      context: .
+      dockerfile: app/modules/UI_API/.dockerfile
+    container_name: ui-api
+    hostname: ui-api
+    ports:
+      - "8088:8088"
+    env_file:
+      - .env.docker
+    volumes:
+      - ./.env.docker:/app/.env:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    depends_on:
+      cosmos-emulator:
+        condition: service_healthy
+    networks:
+      - finance-net
+    restart: on-failure
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: smif-ui
+    hostname: smif-ui
+    ports:
+      - "5173:80"
+    depends_on:
+      ui-api:
+        condition: service_started
+    networks:
+      - finance-net
+    restart: on-failure
 
   functions:
     build:
@@ -245,7 +277,7 @@ services:
     depends_on:
       azurite:
         condition: service_healthy
-      cosmos:
+      cosmos-emulator:
         condition: service_healthy
       servicebus-emulator:
         condition: service_started
@@ -283,7 +315,7 @@ services:
     depends_on:
       azurite:
         condition: service_healthy
-      cosmos:
+      cosmos-emulator:
         condition: service_healthy
       eventhub:
         condition: service_started
@@ -304,7 +336,7 @@ services:
       - ./requirements.txt:/app/requirements.txt:ro
       - ./app/modules/DPS/services/client_processor/portfolio.csv:/app/app/modules/DPS/services/client_processor/portfolio.csv:ro
     depends_on:
-      cosmos:
+      cosmos-emulator:
         condition: service_healthy
     networks:
       - finance-net
@@ -312,5 +344,5 @@ services:
     
 volumes:
   azurite_data:
-  cosmos_data:
+  cosmos:
   esdata:
