@@ -15,8 +15,8 @@ class InsightState(TypedDict):
     iterations: int
     status: str                # "pending" | "verified" | "failed"
 
-SCORE_THRESHOLD = 75.0
-MAX_ITERATIONS = 4
+SCORE_THRESHOLD = 80.0
+MAX_ITERATIONS = 3
 
 async def generate_insight(state):
     insight = await generate_insight_agent(state)

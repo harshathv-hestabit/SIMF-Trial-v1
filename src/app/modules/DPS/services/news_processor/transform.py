@@ -6,14 +6,12 @@ def normalize_news_document(raw_doc: dict) -> dict:
         raise ValueError("Incoming Event Hub payload must be a JSON object")
 
     data = _get_nested_dict(raw_doc, "data")
-    content = _get_nested_dict(data, "content")
+    content = _get_nested_dict(data, "content") or raw_doc
 
     article_id = _require_article_id(raw_doc, data, content)
     event_id = _first_non_empty(data, "id", "event_id")
     link = _normalize_url(_first_non_empty(content, "url", "link", "canonical_url"))
-    image_url = _normalize_url(
-        _first_non_empty(content, "image", "image_url", "thumbnail", "thumbnail_url")
-    )
+    image_url = _normalize_image_url(content)
     authors = _normalize_authors(content)
     normalized = {
         "id": article_id,
@@ -119,6 +117,9 @@ def _normalize_authors(content: dict) -> list[str]:
         return [str(author).strip() for author in authors if str(author).strip()]
     if isinstance(authors, str) and authors.strip():
         return [authors.strip()]
+    author = content.get("author")
+    if isinstance(author, str) and author.strip():
+        return [author.strip()]
     return []
 
 
@@ -130,6 +131,24 @@ def _normalize_source(raw_doc: dict, content: dict) -> str | None:
     if source:
         return str(source)
     return None
+
+
+def _normalize_image_url(content: dict) -> str:
+    image = content.get("image")
+    if isinstance(image, list):
+        for item in image:
+            if isinstance(item, dict):
+                value = _first_non_empty(item, "url")
+            else:
+                value = item
+            normalized = _normalize_url(value)
+            if normalized:
+                return normalized
+        return ""
+
+    return _normalize_url(
+        _first_non_empty(content, "image", "image_url", "thumbnail", "thumbnail_url")
+    )
 
 
 def _normalize_url(value: object | None) -> str:

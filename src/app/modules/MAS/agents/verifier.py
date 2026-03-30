@@ -14,7 +14,7 @@ You are a financial insight quality evaluator.
 
 NEWS EVENT
 Title: {news.get("title")}
-Content: {news.get("symbols")}
+Content: {news.get("content")}
 
 CLIENT PORTFOLIO
 Holdings: {portfolio}
