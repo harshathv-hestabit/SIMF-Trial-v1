@@ -6,9 +6,9 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app.common.settings import settings
 from .listener import NewsStreamListener, create_listener
 from .publisher import EventHubPublisher
+from app.common.settings import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logging.getLogger("azure").setLevel(logging.WARNING)
 logging.getLogger("uamqp").setLevel(logging.WARNING)
-logging.getLogger("websockets").setLevel(logging.WARNING)
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -70,14 +70,18 @@ async def health() -> dict[str, str]:
 @app.get("/ready")
 async def ready() -> JSONResponse:
     listener = container.listener
-    is_ws_connected = bool(listener and listener.stats.websocket_connected)
+    poller_running = bool(listener and listener.stats.poller_running)
     is_producer_ready = container.publisher.is_ready
-    is_ready = is_ws_connected and is_producer_ready
+    has_successful_poll = bool(listener and listener.stats.last_successful_poll_time)
+    is_ready = poller_running and is_producer_ready and has_successful_poll
 
     payload = {
         "ready": is_ready,
-        "websocket_connected": is_ws_connected,
+        "poller_running": poller_running,
         "producer_ready": is_producer_ready,
+        "has_successful_poll": has_successful_poll,
+        "last_successful_poll_time": listener.stats.last_successful_poll_time if listener else None,
+        "last_error": listener.stats.last_error if listener else None,
     }
     status_code = 200 if is_ready else 503
     return JSONResponse(content=payload, status_code=status_code)
@@ -92,6 +96,13 @@ async def stats() -> dict[str, Any]:
             "messages_published": 0,
             "reconnect_count": 0,
             "last_event_time": None,
+            "polls_attempted": 0,
+            "polls_succeeded": 0,
+            "last_poll_time": None,
+            "last_successful_poll_time": None,
+            "last_batch_size": 0,
+            "next_updated_since": None,
+            "last_error": None,
         }
 
     return {
@@ -99,4 +110,11 @@ async def stats() -> dict[str, Any]:
         "messages_published": listener.stats.messages_published,
         "reconnect_count": listener.stats.reconnect_count,
         "last_event_time": listener.stats.last_event_time,
+        "polls_attempted": listener.stats.polls_attempted,
+        "polls_succeeded": listener.stats.polls_succeeded,
+        "last_poll_time": listener.stats.last_poll_time,
+        "last_successful_poll_time": listener.stats.last_successful_poll_time,
+        "last_batch_size": listener.stats.last_batch_size,
+        "next_updated_since": listener.stats.next_updated_since,
+        "last_error": listener.stats.last_error,
     }
