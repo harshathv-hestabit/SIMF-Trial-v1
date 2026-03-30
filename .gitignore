@@ -7,3 +7,5 @@ index_dump.json
 portfolio.csv
 .vscode
 local.settings.json
+node_modules
+dist

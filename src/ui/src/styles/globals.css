@@ -1,0 +1,49 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+:root {
+  color-scheme: light;
+  font-family: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
+  --app-bg:
+    radial-gradient(circle at 18% 16%, rgba(98, 86, 255, 0.22), transparent 24%),
+    radial-gradient(circle at 82% 14%, rgba(255, 0, 145, 0.16), transparent 26%),
+    radial-gradient(circle at 50% 100%, rgba(66, 135, 245, 0.16), transparent 34%),
+    linear-gradient(180deg, #08111f 0%, #10182b 48%, #0b1220 100%);
+  --surface-1: rgba(11, 17, 32, 0.72);
+  --surface-2: rgba(20, 26, 46, 0.78);
+  --surface-3: rgba(28, 34, 58, 0.86);
+  --border-1: rgba(139, 163, 255, 0.16);
+  --border-2: rgba(255, 73, 190, 0.18);
+  --text-1: #f5f7ff;
+  --text-2: #b7c1ea;
+  --text-3: #8d97c4;
+  --accent-blue: #73a6ff;
+  --accent-magenta: #ff4eb8;
+  --accent-violet: #8b78ff;
+}
+
+html {
+  background: #08111f;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--app-bg);
+  color: var(--text-1);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+input[type="file"] {
+  color: var(--text-2);
+}
+
+#root {
+  min-height: 100vh;
+}
