@@ -81,6 +81,7 @@ def load_client_insights(database_client, client_id: str) -> list[dict[str, Any]
            c.news_title, c.tickers, c.status, c.timestamp
     FROM c
     WHERE c.client_id = @client_id
+      AND (NOT IS_DEFINED(c.type) OR c.type = 'insight')
     ORDER BY c.timestamp DESC
     """
     insights = list(

@@ -23,6 +23,14 @@ class Settings(AzureServiceEmulatorSettings):
     STANDARD_WORKFLOW_CONCURRENCY: int = Field(1, description="Concurrent standard workflow executions")
     STANDARD_WORKFLOW_BATCH_LIMIT: int = Field(50, description="Maximum delayed news items processed per standard workflow run")
     GENERATE_INSIGHT_CONCURRENCY: int = Field(1, description="Concurrent generate insight executions")
+    SERVICEBUS_MAX_LOCK_RENEWAL_SECONDS: int = Field(
+        900,
+        description="Maximum lock renewal duration for long-running message handlers",
+    )
+    INSIGHT_JOB_PROCESSING_STALE_AFTER_SECONDS: int = Field(
+        1800,
+        description="Treat processing job state as stale after this many seconds",
+    )
 
     GOOGLE_API_KEY: str = Field(..., description="Gemini API Key")
     ELASTICSEARCH_URL: str = Field(..., description="Elastic Search Endpoint")

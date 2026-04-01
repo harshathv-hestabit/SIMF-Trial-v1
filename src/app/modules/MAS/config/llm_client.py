@@ -32,6 +32,18 @@ class LLMBackend:
                 return await self.llm.ainvoke(messages)
 
 
+@dataclass(slots=True)
+class LLMCallResult:
+    text: str
+    backend_name: str
+    backend_provider: str
+    backend_model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    raw_usage: dict[str, Any]
+
+
 class LLMClient:
     def __init__(self, backends: list[LLMBackend], max_retries: int = 3):
         if not backends:
@@ -196,7 +208,66 @@ class LLMClient:
 
         return str(content).strip()
 
+    @staticmethod
+    def _as_int(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def extract_usage(cls, response: Any) -> dict[str, Any]:
+        usage: dict[str, Any] = {}
+
+        usage_metadata = getattr(response, "usage_metadata", None)
+        if isinstance(usage_metadata, dict):
+            usage.update(usage_metadata)
+
+        response_metadata = getattr(response, "response_metadata", None)
+        if isinstance(response_metadata, dict):
+            token_usage = response_metadata.get("token_usage")
+            if isinstance(token_usage, dict):
+                usage.update(token_usage)
+            usage_section = response_metadata.get("usage")
+            if isinstance(usage_section, dict):
+                usage.update(usage_section)
+
+        if not usage and isinstance(response, dict):
+            for key in ("usage", "usage_metadata", "token_usage"):
+                value = response.get(key)
+                if isinstance(value, dict):
+                    usage.update(value)
+
+        prompt_tokens = cls._as_int(
+            usage.get("prompt_tokens")
+            or usage.get("input_tokens")
+            or usage.get("prompt_token_count")
+        )
+        completion_tokens = cls._as_int(
+            usage.get("completion_tokens")
+            or usage.get("output_tokens")
+            or usage.get("candidates_token_count")
+        )
+        total_tokens = cls._as_int(
+            usage.get("total_tokens")
+            or usage.get("total_token_count")
+            or usage.get("totalTokens")
+        )
+        if total_tokens <= 0:
+            total_tokens = prompt_tokens + completion_tokens
+
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "raw_usage": usage,
+        }
+
     async def call(self, messages: List[Any]):
+        response, _ = await self.call_with_backend(messages)
+        return response
+
+    async def call_with_backend(self, messages: List[Any]) -> tuple[Any, LLMBackend]:
         last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
@@ -205,7 +276,8 @@ class LLMClient:
 
             for backend in self._ordered_backends(start_index):
                 try:
-                    return await backend.invoke(messages)
+                    response = await backend.invoke(messages)
+                    return response, backend
                 except Exception as exc:
                     last_error = exc
                     if self._is_rate_limit_error(exc):
@@ -235,8 +307,22 @@ class LLMClient:
         raise RuntimeError("LLM call failed after retries")
 
     async def call_text(self, messages: List[Any]) -> str:
-        response = await self.call(messages)
-        return self.extract_text(response)
+        result = await self.call_text_with_usage(messages)
+        return result.text
+
+    async def call_text_with_usage(self, messages: List[Any]) -> LLMCallResult:
+        response, backend = await self.call_with_backend(messages)
+        usage = self.extract_usage(response)
+        return LLMCallResult(
+            text=self.extract_text(response),
+            backend_name=backend.name,
+            backend_provider=backend.provider,
+            backend_model=backend.model,
+            prompt_tokens=usage["prompt_tokens"],
+            completion_tokens=usage["completion_tokens"],
+            total_tokens=usage["total_tokens"],
+            raw_usage=usage["raw_usage"],
+        )
 
 
 _llm_client = None

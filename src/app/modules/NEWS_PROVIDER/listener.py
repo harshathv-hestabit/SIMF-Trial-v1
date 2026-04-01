@@ -13,9 +13,9 @@ from .publisher import EventHubPublisher
 logger = logging.getLogger(__name__)
 
 BENZINGA_NEWS_URL = "https://api.benzinga.com/api/v2/news"
-POLL_INTERVAL_SECONDS = 10
+POLL_INTERVAL_SECONDS = 60
 POLL_OVERLAP_SECONDS = 60
-PAGE_SIZE = 2
+PAGE_SIZE = 10
 REQUEST_TIMEOUT_SECONDS = 30
 
 
@@ -92,8 +92,8 @@ class NewsStreamListener:
         params = {
             "token": self.benzinga_api_key,
             "pageSize": str(PAGE_SIZE),
-            "displayOutput": "full",
-            "sort": "updated:asc",
+            "displayOutput": "abstract",
+            "sort": "updated:desc" if self._updated_since_cursor is None else "updated:asc",
         }
         if self._updated_since_cursor is not None:
             params["updatedSince"] = str(self._updated_since_cursor)

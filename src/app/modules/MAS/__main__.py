@@ -1,10 +1,19 @@
 import asyncio
 import logging
 
+from azure.servicebus.aio import AutoLockRenewer
 from azure.servicebus.exceptions import ServiceBusConnectionError, ServiceBusError
+from azure.servicebus.exceptions import MessageLockLostError
 
 from app.common.news_monitor import AsyncNewsMonitor
 from .config import AsyncServiceBusPublisher, decode_message_body, settings
+from .util.insight_logging import append_insight_log, initialize_insight_log
+from .util.insight_job_state import (
+    build_job_key,
+    claim_job_for_processing,
+    mark_job_completed,
+    mark_job_failed,
+)
 from .workflow.generate_insight import InsightState, build_insight_graph
 from .workflow.hnw import HNWState, build_hnw_graph
 from .workflow.standard import StandardState, build_standard_graph
@@ -76,6 +85,8 @@ async def run_standard_workflow(event_body: dict) -> dict:
 
 async def run_generate_insight_workflow(event_body: dict) -> dict:
     news_doc_id = event_body.get("news_doc_id")
+    client_id = str(event_body.get("client_id", "unknown"))
+    job_key = str(event_body.get("job_key") or build_job_key(client_id, str(news_doc_id)))
     partition_key = event_body.get("partition_key", news_doc_id)
     news_monitor = AsyncNewsMonitor(
         cosmos_url=settings.COSMOS_URL,
@@ -84,9 +95,14 @@ async def run_generate_insight_workflow(event_body: dict) -> dict:
         news_container=settings.NEWS_CONTAINER,
     )
     logger.info(
-        "workflow_started workflow=generate_insight client_id=%s news_doc_id=%s",
-        event_body.get("client_id"),
+        "workflow_started workflow=generate_insight client_id=%s news_doc_id=%s job_key=%s",
+        client_id,
         news_doc_id,
+        job_key,
+    )
+    log_file_path = initialize_insight_log(
+        client_id=client_id,
+        news_doc_id=news_doc_id,
     )
     if news_doc_id:
         await news_monitor.record(
@@ -94,26 +110,46 @@ async def run_generate_insight_workflow(event_body: dict) -> dict:
             partition_key=partition_key,
             stage="generate_insight",
             status="processing",
-            details={"client_id": event_body.get("client_id")},
+            details={"client_id": client_id, "job_key": job_key},
         )
     initial_state: InsightState = {
-        "client_id": event_body.get("client_id", "unknown"),
+        "client_id": client_id,
         "news_document": event_body.get("news_document", {}),
         "client_portfolio_document": event_body.get("client_portfolio_document", {}),
+        "job_key": job_key,
+        "log_file_path": log_file_path,
         "insight_draft": "",
         "verification_score": 0.0,
         "verification_feedback": "",
         "iterations": 0,
         "status": "pending",
+        "token_usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "calls": [],
+        },
     }
     try:
         result = await insight_graph.ainvoke(initial_state)
+        append_insight_log(
+            log_file_path,
+            event="workflow_completed",
+            payload={
+                "status": result["status"],
+                "verification_score": result["verification_score"],
+                "iterations": result["iterations"],
+                "token_usage": result.get("token_usage", {}),
+            },
+        )
         logger.info(
-            "workflow_completed workflow=generate_insight client_id=%s news_doc_id=%s status=%s score=%s",
-            event_body.get("client_id"),
+            "workflow_completed workflow=generate_insight client_id=%s news_doc_id=%s job_key=%s status=%s score=%s total_tokens=%s",
+            client_id,
             news_doc_id,
+            job_key,
             result["status"],
             result["verification_score"],
+            result.get("token_usage", {}).get("total_tokens", 0),
         )
         if news_doc_id:
             await news_monitor.record(
@@ -122,20 +158,27 @@ async def run_generate_insight_workflow(event_body: dict) -> dict:
                 stage="generate_insight",
                 status=result["status"],
                 details={
-                    "client_id": event_body.get("client_id"),
+                    "client_id": client_id,
+                    "job_key": job_key,
                     "verification_score": result["verification_score"],
                     "iterations": result["iterations"],
+                    "token_usage": result.get("token_usage", {}),
                 },
             )
         return result
-    except Exception:
+    except Exception as exc:
+        append_insight_log(
+            log_file_path,
+            event="workflow_exception",
+            payload={"error": str(exc)},
+        )
         if news_doc_id:
             await news_monitor.record(
                 news_id=news_doc_id,
                 partition_key=partition_key,
                 stage="generate_insight",
                 status="failed",
-                details={"client_id": event_body.get("client_id")},
+                details={"client_id": client_id, "job_key": job_key},
             )
         raise
     finally:
@@ -173,6 +216,63 @@ def normalize_event_type(queue_name: str, event_body: dict) -> str:
     return str(QUEUE_WORKFLOWS[queue_name]["expected_event_type"])
 
 
+async def _safe_complete_message(receiver, message, *, queue_name: str, workflow_name: str) -> bool:
+    try:
+        await receiver.complete_message(message)
+        return True
+    except MessageLockLostError as exc:
+        logger.warning(
+            "message_complete_lock_lost queue=%s workflow=%s message_id=%s error=%s",
+            queue_name,
+            workflow_name,
+            message.message_id,
+            exc,
+        )
+        return False
+
+
+async def _safe_abandon_message(receiver, message, *, queue_name: str, workflow_name: str) -> bool:
+    try:
+        await receiver.abandon_message(message)
+        return True
+    except MessageLockLostError as exc:
+        logger.warning(
+            "message_abandon_lock_lost queue=%s workflow=%s message_id=%s error=%s",
+            queue_name,
+            workflow_name,
+            message.message_id,
+            exc,
+        )
+        return False
+
+
+async def _safe_dead_letter_message(
+    receiver,
+    message,
+    *,
+    queue_name: str,
+    workflow_name: str,
+    reason: str,
+    error_description: str,
+) -> bool:
+    try:
+        await receiver.dead_letter_message(
+            message,
+            reason=reason,
+            error_description=error_description,
+        )
+        return True
+    except MessageLockLostError as exc:
+        logger.warning(
+            "message_dead_letter_lock_lost queue=%s workflow=%s message_id=%s error=%s",
+            queue_name,
+            workflow_name,
+            message.message_id,
+            exc,
+        )
+        return False
+
+
 async def handle_queue_message(
     queue_name: str,
     receiver,
@@ -181,10 +281,24 @@ async def handle_queue_message(
 ) -> None:
     config = QUEUE_WORKFLOWS[queue_name]
     workflow_name = str(config["workflow_name"])
+    message_id = str(getattr(message, "message_id", ""))
+    delivery_count = int(getattr(message, "delivery_count", 1))
+    locked_until_utc = getattr(message, "locked_until_utc", None)
+    lock_renewer: AutoLockRenewer | None = None
 
     try:
         event_body = decode_message_body(message)
         event_type = normalize_event_type(queue_name, event_body)
+        client_id = str(event_body.get("client_id", ""))
+        news_doc_id = str(event_body.get("news_doc_id", ""))
+        job_key = str(
+            event_body.get("job_key")
+            or (
+                build_job_key(client_id, news_doc_id)
+                if workflow_name == "generate_insight" and client_id and news_doc_id
+                else ""
+            )
+        )
 
         if event_type != config["expected_event_type"]:
             raise ValueError(
@@ -192,13 +306,86 @@ async def handle_queue_message(
                 f"{config['expected_event_type']} but received {event_type}"
             )
 
-        await config["handler"](event_body)
-        await receiver.complete_message(message)
+        logger.info(
+            "message_received queue=%s workflow=%s message_id=%s delivery_count=%s locked_until_utc=%s client_id=%s news_doc_id=%s job_key=%s",
+            queue_name,
+            workflow_name,
+            message_id,
+            delivery_count,
+            locked_until_utc,
+            client_id,
+            news_doc_id,
+            job_key,
+        )
+
+        if workflow_name == "generate_insight":
+            claim = await claim_job_for_processing(
+                event_body=event_body,
+                message_id=message_id,
+                delivery_count=delivery_count,
+                locked_until_utc=locked_until_utc,
+            )
+            decision = claim["decision"]
+            event_body["job_key"] = claim["job_key"]
+            job_key = claim["job_key"]
+            if decision != "process":
+                logger.info(
+                    "message_duplicate_skip queue=%s workflow=%s message_id=%s delivery_count=%s client_id=%s news_doc_id=%s job_key=%s decision=%s",
+                    queue_name,
+                    workflow_name,
+                    message_id,
+                    delivery_count,
+                    client_id,
+                    news_doc_id,
+                    job_key,
+                    decision,
+                )
+                await _safe_complete_message(
+                    receiver,
+                    message,
+                    queue_name=queue_name,
+                    workflow_name=workflow_name,
+                )
+                return
+
+            lock_renewer = AutoLockRenewer()
+            lock_renewer.register(
+                receiver=receiver,
+                renewable=message,
+                max_lock_renewal_duration=settings.SERVICEBUS_MAX_LOCK_RENEWAL_SECONDS,
+            )
+
+        result = await config["handler"](event_body)
+
+        if workflow_name == "generate_insight":
+            await mark_job_completed(
+                event_body=event_body,
+                message_id=message_id,
+                delivery_count=delivery_count,
+                result=result,
+            )
+        await _safe_complete_message(
+            receiver,
+            message,
+            queue_name=queue_name,
+            workflow_name=workflow_name,
+        )
     except Exception as exc:
-        delivery_count = int(getattr(message, "delivery_count", 1))
+        event_body = locals().get("event_body", {})
+        workflow_name = str(config["workflow_name"])
+        if workflow_name == "generate_insight" and isinstance(event_body, dict):
+            await mark_job_failed(
+                event_body=event_body,
+                message_id=message_id,
+                delivery_count=delivery_count,
+                error=exc,
+            )
         if delivery_count >= settings.SERVICEBUS_MAX_DELIVERY_ATTEMPTS:
-            await receiver.dead_letter_message(
+            await _safe_dead_letter_message(
+                receiver,
                 message,
+                queue_name=queue_name,
+                workflow_name=workflow_name,
                 reason="workflow_failed",
                 error_description=str(exc)[:1024],
             )
@@ -211,7 +398,12 @@ async def handle_queue_message(
                 exc,
             )
         else:
-            await receiver.abandon_message(message)
+            await _safe_abandon_message(
+                receiver,
+                message,
+                queue_name=queue_name,
+                workflow_name=workflow_name,
+            )
             logger.exception(
                 "message_abandoned queue=%s workflow=%s message_id=%s delivery_count=%s error=%s",
                 queue_name,
@@ -221,6 +413,10 @@ async def handle_queue_message(
                 exc,
             )
     finally:
+        if lock_renewer is not None:
+            close = getattr(lock_renewer, "close", None)
+            if callable(close):
+                await close()
         semaphore.release()
 
 

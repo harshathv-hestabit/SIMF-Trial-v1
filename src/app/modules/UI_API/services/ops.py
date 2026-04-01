@@ -46,7 +46,10 @@ def load_metrics(database_client) -> dict[str, int]:
         ),
         "insights_saved": _count_query(
             insights_container,
-            "SELECT VALUE COUNT(1) FROM c",
+            (
+                "SELECT VALUE COUNT(1) FROM c "
+                "WHERE (NOT IS_DEFINED(c.type) OR c.type = 'insight')"
+            ),
         ),
         "failed_news_docs": _count_query(
             news_container,
@@ -96,6 +99,7 @@ def load_recent_insights(database_client, limit: int) -> list[dict[str, Any]]:
         c.verification_score,
         c.timestamp
     FROM c
+    WHERE (NOT IS_DEFINED(c.type) OR c.type = 'insight')
     ORDER BY c._ts DESC
     """
     rows = list(
