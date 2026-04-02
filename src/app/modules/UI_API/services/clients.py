@@ -2,21 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from azure.cosmos.exceptions import CosmosResourceNotFoundError
-
 from app.modules.UI_API.settings import settings
 
 
 def load_clients(database_client) -> list[dict[str, str]]:
-    container = database_client.get_container_client(settings.CLIENT_PORTFOLIO_CONTAINER)
-    query = """
-    SELECT c.client_id, c.client_name
-    FROM c
-    """
+    collection = database_client[settings.CLIENT_PORTFOLIO_CONTAINER]
     items = list(
-        container.query_items(
-            query=query,
-            enable_cross_partition_query=True,
+        collection.find(
+            {},
+            {
+                "_id": 0,
+                "client_id": 1,
+                "client_name": 1,
+            },
         )
     )
     deduped: dict[str, dict[str, str]] = {}
@@ -31,23 +29,14 @@ def load_clients(database_client) -> list[dict[str, str]]:
 
 
 def load_client_portfolio(database_client, client_id: str) -> dict[str, Any] | None:
-    container = database_client.get_container_client(settings.CLIENT_PORTFOLIO_CONTAINER)
-    query = """
-    SELECT TOP 1 *
-    FROM c
-    WHERE c.client_id = @client_id
-    """
-    items = list(
-        container.query_items(
-            query=query,
-            parameters=[{"name": "@client_id", "value": client_id}],
-            partition_key=client_id,
-        )
+    collection = database_client[settings.CLIENT_PORTFOLIO_CONTAINER]
+    portfolio = collection.find_one(
+        {"client_id": client_id},
+        {"_id": 0},
     )
-    if not items:
+    if portfolio is None:
         return None
 
-    portfolio = items[0]
     tickers = portfolio.get("ticker_symbols") or []
     currencies = portfolio.get("currencies") or []
     tags = portfolio.get("tags_of_interest") or []
@@ -71,25 +60,28 @@ def load_client_portfolio(database_client, client_id: str) -> dict[str, Any] | N
 
 
 def load_client_insights(database_client, client_id: str) -> list[dict[str, Any]]:
-    try:
-        container = database_client.get_container_client(settings.INSIGHTS_CONTAINER)
-        container.read()
-    except CosmosResourceNotFoundError:
-        return []
-    query = """
-    SELECT c.id, c.client_id, c.insight, c.verification_score,
-           c.news_title, c.tickers, c.status, c.timestamp
-    FROM c
-    WHERE c.client_id = @client_id
-      AND (NOT IS_DEFINED(c.type) OR c.type = 'insight')
-    ORDER BY c.timestamp DESC
-    """
+    collection = database_client[settings.INSIGHTS_CONTAINER]
     insights = list(
-        container.query_items(
-            query=query,
-            parameters=[{"name": "@client_id", "value": client_id}],
-            partition_key=client_id,
-        )
+        collection.find(
+            {
+                "client_id": client_id,
+                "$or": [
+                    {"type": {"$exists": False}},
+                    {"type": "insight"},
+                ],
+            },
+            {
+                "_id": 0,
+                "id": 1,
+                "client_id": 1,
+                "insight": 1,
+                "verification_score": 1,
+                "news_title": 1,
+                "tickers": 1,
+                "status": 1,
+                "timestamp": 1,
+            },
+        ).sort("timestamp", -1)
     )
     return [
         {

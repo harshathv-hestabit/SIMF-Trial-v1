@@ -4,8 +4,6 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from azure.cosmos.exceptions import CosmosResourceNotFoundError
-
 from app.modules.UI_API.settings import settings
 
 
@@ -19,95 +17,74 @@ NEWS_STAGE_LABELS = {
 
 
 def load_metrics(database_client) -> dict[str, int]:
-    news_container = database_client.get_container_client(settings.NEWS_CONTAINER)
-    insights_container = _get_container_or_none(database_client, settings.INSIGHTS_CONTAINER)
+    news_collection = database_client[settings.NEWS_CONTAINER]
+    insights_collection = database_client[settings.INSIGHTS_CONTAINER]
     return {
-        "news_docs": _count_query(
-            news_container,
-            "SELECT VALUE COUNT(1) FROM c",
+        "news_docs": news_collection.count_documents({}),
+        "queued_to_mas": news_collection.count_documents(
+            {"monitoring.current_stage": "change_feed_to_mas"},
         ),
-        "queued_to_mas": _count_query(
-            news_container,
-            (
-                "SELECT VALUE COUNT(1) FROM c "
-                "WHERE IS_DEFINED(c.monitoring.current_stage) "
-                "AND c.monitoring.current_stage = @stage"
-            ),
-            parameters=[{"name": "@stage", "value": "change_feed_to_mas"}],
+        "in_insight_generation": news_collection.count_documents(
+            {"monitoring.current_stage": "generate_insight"},
         ),
-        "in_insight_generation": _count_query(
-            news_container,
-            (
-                "SELECT VALUE COUNT(1) FROM c "
-                "WHERE IS_DEFINED(c.monitoring.current_stage) "
-                "AND c.monitoring.current_stage = @stage"
-            ),
-            parameters=[{"name": "@stage", "value": "generate_insight"}],
+        "insights_saved": insights_collection.count_documents(
+            {
+                "$or": [
+                    {"type": {"$exists": False}},
+                    {"type": "insight"},
+                ]
+            },
         ),
-        "insights_saved": _count_query(
-            insights_container,
-            (
-                "SELECT VALUE COUNT(1) FROM c "
-                "WHERE (NOT IS_DEFINED(c.type) OR c.type = 'insight')"
-            ),
-        ),
-        "failed_news_docs": _count_query(
-            news_container,
-            (
-                "SELECT VALUE COUNT(1) FROM c "
-                "WHERE IS_DEFINED(c.monitoring.current_status) "
-                "AND c.monitoring.current_status = 'failed'"
-            ),
+        "failed_news_docs": news_collection.count_documents(
+            {"monitoring.current_status": "failed"},
         ),
     }
 
 
 def load_news_rows(database_client, limit: int) -> list[dict[str, Any]]:
-    news_container = database_client.get_container_client(settings.NEWS_CONTAINER)
-    query = """
-    SELECT TOP @limit
-        c.id,
-        c.title,
-        c.source,
-        c.symbols,
-        c.published_at,
-        c._ts,
-        c.monitoring
-    FROM c
-    ORDER BY c._ts DESC
-    """
     rows = list(
-        news_container.query_items(
-            query=query,
-            parameters=[{"name": "@limit", "value": limit}],
-            enable_cross_partition_query=True,
+        database_client[settings.NEWS_CONTAINER]
+        .find(
+            {},
+            {
+                "_id": 0,
+                "id": 1,
+                "title": 1,
+                "source": 1,
+                "symbols": 1,
+                "published_at": 1,
+                "_ts": 1,
+                "monitoring": 1,
+            },
         )
+        .sort("_ts", -1)
+        .limit(limit)
     )
     return [_serialize_news_summary(row) for row in rows]
 
 
 def load_recent_insights(database_client, limit: int) -> list[dict[str, Any]]:
-    insights_container = _get_container_or_none(database_client, settings.INSIGHTS_CONTAINER)
-    if insights_container is None:
-        return []
-    query = """
-    SELECT TOP @limit
-        c.client_id,
-        c.news_doc_id,
-        c.news_title,
-        c.status,
-        c.verification_score,
-        c.timestamp
-    FROM c
-    WHERE (NOT IS_DEFINED(c.type) OR c.type = 'insight')
-    ORDER BY c._ts DESC
-    """
     rows = list(
-        insights_container.query_items(
-            query=query,
-            parameters=[{"name": "@limit", "value": limit}],
-            enable_cross_partition_query=True,
+        database_client[settings.INSIGHTS_CONTAINER]
+        .find(
+            {
+                "$or": [
+                    {"type": {"$exists": False}},
+                    {"type": "insight"},
+                ]
+            },
+            {
+                "_id": 0,
+                "client_id": 1,
+                "news_doc_id": 1,
+                "news_title": 1,
+                "status": 1,
+                "verification_score": 1,
+                "timestamp": 1,
+            },
         )
+        .sort("_ts", -1)
+        .limit(limit)
     )
     return [
         {
@@ -123,10 +100,16 @@ def load_recent_insights(database_client, limit: int) -> list[dict[str, Any]]:
 
 
 def load_news_detail(database_client, news_id: str) -> dict[str, Any] | None:
-    news_container = database_client.get_container_client(settings.NEWS_CONTAINER)
-    try:
-        row = news_container.read_item(news_id, partition_key=news_id)
-    except CosmosResourceNotFoundError:
+    row = database_client[settings.NEWS_CONTAINER].find_one(
+        {
+            "$or": [
+                {"id": news_id},
+                {"_id": news_id},
+            ]
+        },
+        {"_id": 0},
+    )
+    if row is None:
         return None
 
     monitoring = row.get("monitoring") or {}
@@ -173,33 +156,6 @@ def _serialize_timeline(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return events
-
-
-def _count_query(container, query: str, parameters: list[dict[str, Any]] | None = None) -> int:
-    if container is None:
-        return 0
-    try:
-        return next(
-            iter(
-                container.query_items(
-                    query=query,
-                    parameters=parameters,
-                    enable_cross_partition_query=True,
-                )
-            ),
-            0,
-        )
-    except CosmosResourceNotFoundError:
-        return 0
-
-
-def _get_container_or_none(database_client, container_name: str):
-    try:
-        container = database_client.get_container_client(container_name)
-        container.read()
-        return container
-    except CosmosResourceNotFoundError:
-        return None
 
 
 def _format_stage(stage: str | None) -> str:

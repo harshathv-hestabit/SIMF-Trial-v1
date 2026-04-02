@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.common.azure_services.cosmos import build_sync_cosmos_client, get_database_client
+from app.common.mongo import build_sync_mongo_client, get_database_client
 from app.modules.UI_API.services.clients import (
     load_client_insights,
     load_client_portfolio,
@@ -20,10 +20,10 @@ from app.modules.UI_API.services.ops import (
     load_news_rows,
     load_recent_insights,
 )
-from app.modules.UI_API.services.pipeline import (
-    run_pipeline_from_sample_folder,
-    run_pipeline_from_upload,
-)
+# from app.modules.UI_API.services.pipeline import (
+#     run_pipeline_from_sample_folder,
+#     run_pipeline_from_upload,
+# )
 from app.modules.UI_API.settings import settings
 
 
@@ -33,13 +33,13 @@ def _cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    cosmos_client = build_sync_cosmos_client(settings.COSMOS_URL, settings.COSMOS_KEY)
-    app.state.cosmos_client = cosmos_client
-    app.state.database_client = get_database_client(cosmos_client, settings.COSMOS_DB)
+    mongo_client = build_sync_mongo_client(settings.MONGO_URI)
+    app.state.mongo_client = mongo_client
+    app.state.database_client = get_database_client(mongo_client, settings.MONGO_DB)
     try:
         yield
     finally:
-        cosmos_client.close()
+        mongo_client.close()
 
 
 app = FastAPI(
@@ -124,32 +124,6 @@ def get_ops_recent_insights(
         "count": len(items),
         "items": items,
     }
-
-
-@app.post("/api/ops/pipeline/upload")
-async def upload_pipeline_files(files: list[UploadFile] = File(...)):
-    if not files:
-        raise HTTPException(status_code=400, detail="At least one JSON file is required")
-    try:
-        return await run_pipeline_from_upload(files)
-    except json.JSONDecodeError as exc:  # type: ignore[name-defined]
-        raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {exc}") from exc
-
-
-@app.post("/api/ops/pipeline/sample")
-async def run_sample_pipeline():
-    sample_folder = Path(__file__).resolve().parents[1] / "DPS" / "news_raw"
-    if not sample_folder.exists():
-        return {
-            "documents_processed": 0,
-            "pipeline_status": "disabled",
-            "message": "Sample pipeline is disabled because src/app/modules/DPS/news_raw is not present.",
-        }
-    try:
-        return await run_pipeline_from_sample_folder(sample_folder)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_: Request, exc: Exception):
