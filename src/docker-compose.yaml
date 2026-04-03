@@ -162,39 +162,6 @@ services:
       retries: 10
       start_period: 30s
 
-  # dps:
-  #   build:
-  #     context: .
-  #     dockerfile: app/modules/DPS/.dockerfile
-  #   container_name: dps-dashboard
-  #   hostname: dps
-  #   ports:
-  #     - "8501:8501"     # Streamlit UI
-  #   env_file:
-  #     - .env.docker
-  #   command:
-  #     - streamlit
-  #     - run
-  #     - app/modules/DPS/streamlit_app.py
-  #     - --server.headless=true
-  #     - --server.port=8501
-  #   volumes:
-  #     - ./.env.docker:/app/.env:ro
-  #   depends_on:
-  #     azurite:
-  #       condition: service_healthy
-  #     cosmos-emulator:
-  #       condition: service_healthy
-  #   networks:
-  #     - finance-net
-  #   restart: on-failure
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
-  #     interval: 15s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 20s
-
   mas:
     build:
       context: .
@@ -215,31 +182,6 @@ services:
     networks:
       - finance-net
     restart: on-failure
-
-  # insight_feed_service:
-  #   build:
-  #     context: .
-  #     dockerfile: app/modules/FEED/.dockerfile
-  #   container_name: insight-feed
-  #   hostname: insight-feed-service
-  #   ports:
-  #     - "8502:8502"
-  #   env_file:
-  #     - .env.docker
-  #   volumes:
-  #     - ./.env.docker:/app/.env:ro
-  #   depends_on:
-  #     cosmos-emulator:
-  #       condition: service_healthy
-  #   networks:
-  #     - finance-net
-  #   restart: on-failure
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
-  #     interval: 15s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 20s
 
   ui-api:
     build:
