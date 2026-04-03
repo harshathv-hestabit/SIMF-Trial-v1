@@ -24,8 +24,9 @@ from ..relevance import (
 from ..util import EventExecutor
 
 
-RELEVANCE_THRESHOLD = 0.5
-TOP_K = 20
+RELEVANCE_THRESHOLD = float(settings.RELEVANCE_MIN_SCORE)
+RETRIEVAL_K = 20
+FINAL_TOP_N = max(int(settings.RELEVANCE_FINAL_TOP_N), 1)
 
 cosmos_client = build_sync_cosmos_client(settings.COSMOS_URL, settings.COSMOS_KEY)
 
@@ -142,7 +143,8 @@ def map_relevance(state: StandardState) -> StandardState:
     news_lookup = {doc["id"]: doc for doc in state["news_batch"]}
     relevance_results = process_news_stream(
         news_docs=state["news_batch"],
-        top_k=TOP_K,
+        retrieval_k=RETRIEVAL_K,
+        final_top_n=FINAL_TOP_N,
         min_score=RELEVANCE_THRESHOLD,
         client_segments=["retail"],
     )

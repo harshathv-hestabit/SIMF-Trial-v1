@@ -35,11 +35,11 @@ class Settings(AzureServiceEmulatorSettings):
         description="Default hybrid retrieval depth before final candidate selection",
     )
     RELEVANCE_FINAL_TOP_N: int = Field(
-        5,
+        10,
         description="Default final number of selected clients per news item",
     )
     RELEVANCE_MIN_SCORE: float = Field(
-        0.35,
+        0.75,
         description="Minimum hybrid score required for structured-match candidates",
     )
     RELEVANCE_SEMANTIC_ONLY_MIN_SCORE: float = Field(
@@ -55,15 +55,15 @@ class Settings(AzureServiceEmulatorSettings):
         description="Hybrid retrieval depth for HNW candidate selection",
     )
     HNW_RELEVANCE_FINAL_TOP_N: int = Field(
-        3,
+        5,
         description="Default HNW final candidate cap for non-broad news",
     )
     HNW_RELEVANCE_BROAD_TOP_N: int = Field(
         5,
-        description="Expanded HNW cap for broad macro or regulatory news",
+        description="HNW final candidate cap for broad macro or regulatory news",
     )
     HNW_RELEVANCE_MIN_SCORE: float = Field(
-        0.35,
+        0.85,
         description="Minimum hybrid score for HNW structured-match candidates",
     )
 

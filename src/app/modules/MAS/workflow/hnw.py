@@ -36,7 +36,9 @@ class HNWState(TypedDict):
     generate_insight_events: list[dict]
 
 
-RELEVANCE_THRESHOLD = 0.8
+RELEVANCE_THRESHOLD = float(settings.HNW_RELEVANCE_MIN_SCORE)
+RETRIEVAL_K = 20
+FINAL_TOP_N = max(int(settings.HNW_RELEVANCE_FINAL_TOP_N), 1)
 
 
 def hnw_agent_activation(state: HNWState) -> HNWState:
@@ -85,7 +87,8 @@ def score_relevance(state: HNWState) -> HNWState:
     news_doc = state["news_doc"]
     relevance_results = process_news_stream(
         news_docs=[news_doc],
-        top_k=20,
+        retrieval_k=RETRIEVAL_K,
+        final_top_n=FINAL_TOP_N,
         min_score=RELEVANCE_THRESHOLD,
         client_segments=["hnw"],
     )
